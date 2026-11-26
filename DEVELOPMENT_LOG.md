@@ -159,3 +159,20 @@ nutrithm/
 - Flagged differences between original `MAIN_PROMPT.md` and approved evolutions (4 -> 7 body types, nullable routine meal times, removal of duplicate unique indexes, closing instruction pointer).
 
 - Updated `MAIN_PROMPT.md`: synchronized body types (7 types), 21 SVGs, nullable routine meal times, 7 digestive curves, 28 nutrition rule templates, and updated closing project status line.
+
+
+### Prompt 8 — Fixed: app didn't compile; nutrient levels leaking exact quantities
+
+- **Flutter app had 148 compile errors** (never statically checked after STEP 3). Cause: generated code targeted older APIs than the installed package versions (Riverpod 3, google_sign_in 7, flutter_local_notifications 23, postgrest, Flutter's own `CardTheme`→`CardThemeData`). Fixed; `flutter analyze` now 0 errors/0 warnings. Backend already typechecked clean. Deleted the unused `flutter create` scaffold test (spec excludes tests).
+- Added `GOOGLE_SERVER_CLIENT_ID` env var (Flutter `.env`) — required by google_sign_in 7.x on Android to get an ID token Supabase accepts.
+- **Spec violation (§4/§13 forbid exact calories/grams in UI) — fixed.** 5 screens were rendering kcal/grams. Added `lib/core/nutrition/nutrient_levels.dart` as the single place that converts stored macro snapshots → Low/Moderate/High (protein/carbs/fat banded by share of macro energy; fibre by g/100g density), plus `shared/widgets/nutrient_level_chips.dart` as the only UI path for displaying them. Numeric snapshots are still stored in `meals`/`meal_items` per §7 — this is display-only.
+
+**Open findings (not yet fixed, pending review):**
+1. Push notifications can't fire — nothing ever writes `notification_jobs` rows (scheduler only consumes them); the one insert attempt (`meal_plan_repository.addPrepTask`) is from Flutter and blocked by RLS (backend-only table per §15).
+2. `user_bmi` view lacks `security_invoker = true` — bypasses `profiles` RLS, any authenticated user can read any user's height/weight/BMI.
+3. Food search uses plain `ILIKE`, not `pg_trgm` similarity, despite the extension/index existing (§15 requires trigram fuzzy matching). Earlier log entry (Prompt 5) claiming this was done is inaccurate.
+4. Router never checks `onboarding_completed` — Google sign-in or an interrupted onboarding lands the user on Home with an empty profile.
+5. `NotificationService` in `main.dart` is built without an `ApiClient`, so the FCM device token is never registered with the backend.
+6. Default meal-reminder times are hardcoded in the UI instead of derived from body type/digestive curve/routine (§10); `daily_routines.timezone` is stored but unused.
+7. `012_rls_policies.sql` isn't idempotent (no `DROP POLICY IF EXISTS`) — only migration that can't be re-run safely.
+8. `AI_PROVIDER` env var is unused — `GeminiService` is hardwired, not actually provider-selectable per §14.
